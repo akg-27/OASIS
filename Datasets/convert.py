@@ -1,18 +1,9 @@
-import csv
+import pandas as pd
 
-# Input and output file paths
-txt_file = "UD.txt"
-csv_file = "UD.csv"
+xlsx_file = r"Datasets\\life_history_traits.xlsx"   # change this path
+csv_file  = r"Datasets\\life_history_traits.csv"    # change this path
 
-with open(txt_file, "r", encoding="utf-8") as infile, \
-     open(csv_file, "w", newline="", encoding="utf-8") as outfile:
+df = pd.read_excel(xlsx_file)
+df.to_csv(csv_file, index=False)
 
-    writer = csv.writer(outfile)
-
-    for line in infile:
-        # Split by whitespace OR comma — adjust if needed
-        row = line.strip().split(",")
-
-        writer.writerow(row)
-
-print("Conversion complete: UD.csv created.")
+print("Conversion complete!")

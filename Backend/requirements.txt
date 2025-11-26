@@ -1,0 +1,15 @@
+fastapi[standard]
+uvicorn
+pandas
+numpy
+plotly
+python-multipart
+openpyxl
+xlrd
+six
+python-dateutil
+pytz
+scipy
+netCDF4
+xarray
+requests
