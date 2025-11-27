@@ -83,10 +83,15 @@ def get_value(
         "unit": unit
     }
 
+from fastapi.responses import HTMLResponse
+import plotly.graph_objects as go
+
+
 
 # ============================================
 # 2) BUBBLE MAP VISUALIZATION (HTML Plot)
 # ============================================
+
 @router.get("/map", response_class=HTMLResponse)
 def generate_map(parameter: str = Query(..., enum=PARAMETERS)):
 

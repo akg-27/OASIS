@@ -39,6 +39,8 @@ backend/
 │   │   └── dna_reference.json
 │── requirements.txt
 │── README.md
+|-uploads
+|-.env
 
 
 
