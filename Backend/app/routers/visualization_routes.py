@@ -3,58 +3,36 @@ from fastapi.responses import HTMLResponse
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import os
+import plotly.graph_objects as go
+
+# Load data from Supabase instead of uploads
+from app.services.db_reader_service import load_ocean_from_db
 
 router = APIRouter(prefix="/visualize", tags=["Visualization"])
 
-
-# ===============================
-# Load Latest Uploaded Ocean File
-# ===============================
-import os
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
-print("USING UPLOAD_DIR:", UPLOAD_DIR)
-
-
-
-def load_ocean_data():
-    files = [f for f in os.listdir(UPLOAD_DIR) if f.endswith(".csv")]
-    if not files:
-        return None
-    latest = sorted(files)[-1]
-    full_path = os.path.join(UPLOAD_DIR, latest)
-    print("LOADING FILE:", full_path)
-    return pd.read_csv(full_path)
-
-
-
 # ============================
-# LIST OF VALID PARAMETERS
+# VALID PARAMETERS & UNITS
 # ============================
 PARAMETERS = ["DIC", "MLD", "PCO2_ORIGINAL", "CHL", "NO3", "SSS", "SST", "DEVIANT_UNCERTAINTY"]
 
 UNITS = {
-    "DIC" : "milimole/m3",
-    "MLD" : "m",
-    "PCO2_ORIGINAL" : "micro_atm",
-    "CHL" : "kg/m3",
-    "NO3" : "milimole/m3",
-    "SSS" : "PSU",
-    "SST" : "deg C",
-    "DEVIANT_UNCERTAINTY" : "micro atm"
+    "DIC": "milimole/m3",
+    "MLD": "m",
+    "PCO2_ORIGINAL": "micro_atm",
+    "CHL": "kg/m3",
+    "NO3": "milimole/m3",
+    "SSS": "PSU",
+    "SST": "deg C",
+    "DEVIANT_UNCERTAINTY": "micro atm"
 }
 
-
-# ================================
-# Helper: Nearest Location Lookup
-# ================================
+# ====================================
+# HELPER: NEAREST LOCATION LOOKUP
+# ====================================
 def get_nearest_row(df, LAT, LON):
     df["dist"] = np.sqrt((df["LAT"] - LAT)**2 + (df["LON"] - LON)**2)
     nearest_index = df["dist"].idxmin()
     return df.iloc[nearest_index]
-
 
 # ==================================================
 # 1) GET VALUE BY LAT/LON + PARAMETER (JSON OUTPUT)
@@ -65,9 +43,9 @@ def get_value(
     LON: float,
     parameter: str = Query(..., enum=PARAMETERS)
 ):
-    df = load_ocean_data()
+    df = load_ocean_from_db()
     if df is None:
-        return {"error": "No ocean file uploaded"}
+        return {"error": "No ocean data found in database"}
 
     row = get_nearest_row(df, LAT, LON)
     value = row[parameter]
@@ -83,24 +61,23 @@ def get_value(
         "unit": unit
     }
 
-from fastapi.responses import HTMLResponse
-import plotly.graph_objects as go
-
-
-
 # ============================================
-# 2) BUBBLE MAP VISUALIZATION (HTML Plot)
+# 2) BUBBLE MAP VISUALIZATION (USING DB DATA)
 # ============================================
-
 @router.get("/map", response_class=HTMLResponse)
 def generate_map(parameter: str = Query(..., enum=PARAMETERS)):
-
-    df = load_ocean_data()
+    df = load_ocean_from_db()
     if df is None:
-        return HTMLResponse("<h3>No ocean data uploaded yet</h3>")
+        return HTMLResponse("<h3>No ocean data found in database</h3>")
+
+    if parameter not in df.columns:
+        return HTMLResponse(f"<h3>Parameter '{parameter}' not found in database</h3>")
 
     sub_df = df[["LAT", "LON", parameter]].copy().dropna()
 
+    # ============================
+    # SAME EXACT RANGES YOU HAD
+    # ============================
     RANGE_LIMITS = {
         "DIC": (1950, 2100),
         "MLD": (0, 100),
@@ -134,5 +111,4 @@ def generate_map(parameter: str = Query(..., enum=PARAMETERS)):
     )
 
     fig.update_coloraxes(colorbar_title=f"{parameter} ({UNITS.get(parameter, '')})")
-
     return HTMLResponse(fig.to_html(full_html=True))

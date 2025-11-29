@@ -2,22 +2,20 @@ from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse
 import pandas as pd
 import plotly.express as px
-import os
+
+# LOAD TAXONOMY FROM SUPABASE
+from app.services.db_reader_service import load_taxonomy_from_db
 
 router = APIRouter(prefix="/taxonomy", tags=["Taxonomy"])
 
-# ========= LOAD UPLOADED TAXONOMY CSV ============
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 
+# ============================
+# HELPER: GET DATA FROM DB
+# ============================
 def load_taxonomy():
-    files = [f for f in os.listdir(UPLOAD_DIR) if f.endswith(".csv")]
-    if not files:
-        return None
-    # Latest uploaded
-    latest = sorted(files)[-1]
-    df = pd.read_csv(os.path.join(UPLOAD_DIR, latest))
+    df = load_taxonomy_from_db()
     return df
+
 
 # ============ 1) SPECIES LIST ===============
 @router.get("/list")
@@ -32,6 +30,7 @@ def list_species():
         "common_names": df["Common Name"].dropna().unique().tolist()
     }
 
+
 # ============ 2) FULL DETAILS OF SPECIES ============
 @router.get("/species/{name}")
 def species_info(name: str):
@@ -39,13 +38,13 @@ def species_info(name: str):
     if df is None:
         return {"error": "No taxonomy data uploaded"}
 
-    # Case-insensitive search
     df["Scientific Name"] = df["Scientific Name"].astype(str)
     match = df[df["Scientific Name"].str.lower() == name.lower()]
     if match.empty:
         return {"error": "Species not found"}
 
     return match.to_dict(orient="records")[0]
+
 
 # ============ 3) FILTER BY FAMILY, GENUS, ORDER ============
 @router.get("/filter")
@@ -58,11 +57,11 @@ def filter_taxonomy(
     if df is None:
         return {"error": "No taxonomy data uploaded"}
 
-    # 🔽 Keep this EXACT block
+    # KEEP EXACT SAME NORMALIZATION (NEEDED FROM BEFORE)
     for col in ["Family", "Genus", "Order"]:
         df[col] = df[col].astype(str).fillna("").str.lower()
 
-    # Filters become safe & case-insensitive
+    # SAME EXACT FILTER LOGIC
     if family:
         df = df[df["Family"] == family.lower()]
     if genus:
@@ -70,7 +69,7 @@ def filter_taxonomy(
     if order:
         df = df[df["Order"] == order.lower()]
 
-    # Convert NaN to None to make JSON safe
+    # SAME FIX FOR JSON NaN
     clean_df = df.where(pd.notnull(df), None)
     return clean_df.to_dict(orient="records")
 
@@ -90,6 +89,7 @@ def iucn_stats():
                  color="IUCN Status",
                  template="plotly_dark")
     return HTMLResponse(fig.to_html(full_html=True))
+
 
 # ============ 5) HABITAT PIE CHART ============
 @router.get("/habitat/stats", response_class=HTMLResponse)
