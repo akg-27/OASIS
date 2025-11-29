@@ -7,6 +7,17 @@ from app.routers import otolith_routes
 from app.routers import edna_routes
 
 
+# Force Python to resolve all DNS using IPv4 only
+import socket
+
+original_getaddrinfo = socket.getaddrinfo
+
+def force_ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+socket.getaddrinfo = force_ipv4_getaddrinfo
+
+
 app = FastAPI(title="CMLRE Marine Data Platform")
 
 # Initialize DB tables

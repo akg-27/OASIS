@@ -35,18 +35,17 @@ def clean_sequence(seq: str) -> str:
     return cleaned
 
 
-# -----------------------------
-# BLAST SUBMIT (REQUESTS ONLY)
-# -----------------------------
+# ---------------------------------------------------------
+# BLAST SUBMIT (Requests Only)
+# ---------------------------------------------------------
 def submit_blast(sequence: str) -> Optional[str]:
-    """Submit query to NCBI BLAST, return RID if successful."""
     data = {
         "CMD": "Put",
         "PROGRAM": "blastn",
         "DATABASE": "nt",
         "QUERY": sequence,
         "MEGABLAST": "on",
-        "EMAIL": Entrez.email,  # NCBI requires this
+        "EMAIL": Entrez.email,
     }
 
     headers = {
@@ -76,11 +75,10 @@ def submit_blast(sequence: str) -> Optional[str]:
         return None
 
 
-# -----------------------------
-# BLAST POLLING (REQUESTS ONLY)
-# -----------------------------
+# ---------------------------------------------------------
+# BLAST POLL (Requests Only)
+# ---------------------------------------------------------
 def poll_blast_for_rid(rid: str) -> Optional[str]:
-    """Poll BLAST until result XML is ready."""
     start = time.time()
 
     while True:
@@ -105,7 +103,7 @@ def poll_blast_for_rid(rid: str) -> Optional[str]:
                 continue
 
             if "Status=FAILED" in text or "Status=UNKNOWN" in text:
-                print("BLAST FAILED response:", text[:300])
+                print("BLAST FAILED")
                 return None
 
             if "<BlastOutput" in text:
@@ -118,11 +116,10 @@ def poll_blast_for_rid(rid: str) -> Optional[str]:
             continue
 
 
-# -----------------------------
-# PARSE BLAST XML
-# -----------------------------
+# ---------------------------------------------------------
+# Parse BLAST XML
+# ---------------------------------------------------------
 def parse_blast_xml_for_top_hit(xml_text: str) -> Optional[Dict[str, Any]]:
-    """Parse BLAST XML and extract top hit."""
     try:
         handle = io.StringIO(xml_text)
         blast_record = NCBIXML.read(handle)
@@ -140,6 +137,7 @@ def parse_blast_xml_for_top_hit(xml_text: str) -> Optional[Dict[str, Any]]:
     hit_def = top_alignment.hit_def
     accession = top_alignment.accession
     identity_pct = (top_hsp.identities / top_hsp.align_length) * 100
+
     print("HIT DEF RAW:", hit_def)
 
     return {
@@ -152,33 +150,43 @@ def parse_blast_xml_for_top_hit(xml_text: str) -> Optional[Dict[str, Any]]:
     }
 
 
-# -----------------------------
-# NCBI TAXONOMY
-# -----------------------------
+# ---------------------------------------------------------
+# Fetch NCBI Taxonomy
+# ---------------------------------------------------------
 def fetch_taxonomy_for_name(name: str) -> Optional[Dict[str, Any]]:
-    """Fetch taxonomy for species name via Entrez."""
     try:
         search = Entrez.esearch(db="taxonomy", term=name, retmode="xml")
         rec = Entrez.read(search)
-        taxids = rec.get("IdList", [])
-        if not taxids:
-            print("TAXONOMY NOT FOUND")
+        ids = rec.get("IdList", [])
+        if not ids:
             return None
 
-        taxid = taxids[0]
-        ef = Entrez.efetch(db="taxonomy", id=taxid, retmode="xml")
+        ef = Entrez.efetch(db="taxonomy", id=ids[0], retmode="xml")
         records = Entrez.read(ef)
 
         lineage = records[0].get("LineageEx", [])
         tax = {}
+
+        # Fill ranks
         for item in lineage:
             rank = item.get("Rank")
             sci = item.get("ScientificName")
             if rank and sci:
                 tax[rank] = sci
 
+        # Current record
         curr = records[0]
         tax[curr.get("Rank")] = curr.get("ScientificName")
+
+        # ---------------------------------------------------------
+        # ★ Missing Order Fallback
+        # ---------------------------------------------------------
+        if "order" not in tax:
+            for item in lineage:
+                sci = item.get("ScientificName", "")
+                if sci.endswith("formes") or sci.endswith("iformes"):
+                    tax["order"] = sci
+                    break
 
         return {
             "kingdom": tax.get("superkingdom") or tax.get("kingdom"),
@@ -195,12 +203,13 @@ def fetch_taxonomy_for_name(name: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-# -----------------------------
-# FULL PIPELINE
-# -----------------------------
+# ---------------------------------------------------------
+# Full EDNA Analysis Pipeline
+# ---------------------------------------------------------
 def analyze_sequence_and_store(sequence: str) -> Dict[str, Any]:
     seq = clean_sequence(sequence)
 
+    # Too short
     if len(seq) < 50:
         result = {
             "raw_sequence": seq,
@@ -214,6 +223,7 @@ def analyze_sequence_and_store(sequence: str) -> Dict[str, Any]:
         supabase.table("edna_data").insert(result).execute()
         return result
 
+    # BLAST submit
     rid = submit_blast(seq)
     if not rid:
         return {
@@ -226,6 +236,7 @@ def analyze_sequence_and_store(sequence: str) -> Dict[str, Any]:
             "note": "blast_submit_failed"
         }
 
+    # BLAST poll
     xml = poll_blast_for_rid(rid)
     if not xml:
         return {
@@ -238,6 +249,7 @@ def analyze_sequence_and_store(sequence: str) -> Dict[str, Any]:
             "note": "blast_poll_failed"
         }
 
+    # Parse XML
     top = parse_blast_xml_for_top_hit(xml)
     if not top:
         return {
@@ -250,39 +262,28 @@ def analyze_sequence_and_store(sequence: str) -> Dict[str, Any]:
             "note": "no_hits_found"
         }
 
-    # extract species from hit_def
-    # -----------------------------
-    # Extract species from hit_def
-    # -----------------------------
+    # ---------------------------------------------------------
+    # ★ Correct Species Extraction (FIRST TWO WORDS)
+    # ---------------------------------------------------------
     hit_def = top["hit_def"]
-    hit_def_words = hit_def.split()
+    hit_words = hit_def.split()
     species_guess = None
 
-    # Debug print so we can inspect
-    print("EXTRACTING FROM HIT_DEF:", hit_def)
-
-    # Rule: First two words typically "Genus species"
-    if len(hit_def_words) >= 2:
-        w1, w2 = hit_def_words[0], hit_def_words[1]
-
-        # Case 1: Standard BLAST naming (Genus species ...)
-        if w1[0].isupper() and w2[0].islower():
+    if len(hit_words) >= 2:
+        w1, w2 = hit_words[0], hit_words[1]
+        if w1[0].isupper():
             species_guess = f"{w1} {w2}"
 
-        # Case 2: Rare case where both are Capitalized
-        elif w1[0].isupper() and w2[0].isupper():
-            species_guess = f"{w1} {w2}"
-
-    # Fallback — always use first two words
-    if species_guess is None and len(hit_def_words) >= 2:
-        species_guess = f"{hit_def_words[0]} {hit_def_words[1]}"
+    # Final fallback
+    if not species_guess and len(hit_words) >= 2:
+        species_guess = f"{hit_words[0]} {hit_words[1]}"
 
     print("EXTRACTED SPECIES:", species_guess)
 
-    taxonomy = taxonomy = fetch_taxonomy_for_name(species_guess.split()[0] + " " + species_guess.split()[1]) \
-           if species_guess and len(species_guess.split()) >= 2 else None
+    # Fetch taxonomy
+    taxonomy = fetch_taxonomy_for_name(species_guess) if species_guess else None
 
-
+    # Save result
     record = {
         "raw_sequence": seq,
         "species": species_guess,
