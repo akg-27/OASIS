@@ -6,7 +6,6 @@ import requests
 from PIL import Image
 from typing import Dict, Any, List
 import pandas as pd
-
 from app.utils.storage_service import upload_bytes_to_otolith_bucket
 from app.database import supabase
 

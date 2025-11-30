@@ -1,4 +1,3 @@
-# app/utils/storage_service.py
 from app.database import supabase
 from typing import Tuple
 

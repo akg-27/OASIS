@@ -1,14 +1,16 @@
-# app/routers/otolith_routes.py
+# THIS FILE HAS OTOLITH ENDPOINTS WHICH IS IMPORTED IN MAIN.PY
+
 from fastapi import APIRouter, File, UploadFile, HTTPException, Query
 from fastapi.responses import JSONResponse
-from typing import List
-import io
-
 from app.services.otolith_service import ingest_otolith_csv_bytes
 from app.database import supabase
 
 router = APIRouter(prefix="/otolith", tags=["Otolith"])
 
+
+# ---------------------------------------------------------
+# 1) FOR OTOLITH CSV FILE UPLOAD
+# ---------------------------------------------------------
 
 @router.post("/upload-csv")
 async def upload_otolith_csv(file: UploadFile = File(...)):
@@ -19,17 +21,29 @@ async def upload_otolith_csv(file: UploadFile = File(...)):
     return JSONResponse({"status": "ok", "summary": result})
 
 
+# ---------------------------------------------------------
+# 2) SHOW THE OVERALL LIST OF OTOLITH DATABASE
+# ---------------------------------------------------------
+
 @router.get("/list")
 def list_otoliths(limit: int = Query(1000, gt=0, le=10000), offset: int = 0):
     res = supabase.table("otolith_data").select("*").range(offset, offset + limit - 1).execute()
     return {"count": len(res.data or []), "data": res.data}
 
 
+# ---------------------------------------------------------
+# 3) GIVE UNLABELED DATA FROM ML (Required for ML)
+# ---------------------------------------------------------
+
 @router.get("/unlabeled")
 def unlabeled(limit: int = Query(1000, gt=0, le=10000)):
     res = supabase.table("otolith_data").select("*").is_("label", None).limit(limit).execute()
     return {"count": len(res.data or []), "data": res.data}
 
+
+# ---------------------------------------------------------
+# 4) MANUALLY LABEL DATAFOR ML
+# ---------------------------------------------------------
 
 @router.post("/label")
 def add_label(id: str = Query(...), label: str = Query(...)):
@@ -39,6 +53,10 @@ def add_label(id: str = Query(...), label: str = Query(...)):
     supabase.table("otolith_data").update({"label": label}).eq("id", id).execute()
     return {"status": "ok", "id": id, "label": label}
 
+
+# ---------------------------------------------------------
+# 5) SEARCH BY OTOLITH_ID
+# ---------------------------------------------------------
 
 @router.get("/by-otolithid")
 def get_by_otolith_id(oid: str = Query(..., description="Original otolithID like CMLRE/OTL/00001")):

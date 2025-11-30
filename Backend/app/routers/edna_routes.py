@@ -1,28 +1,42 @@
-# app/routers/edna_routes.py
-from fastapi import APIRouter, HTTPException, File, UploadFile, Query
-from fastapi.responses import JSONResponse
-from typing import Dict
-import io
+# THIS FILE HAS E-DNA ENDPOINTS WHICH IS IMPORTED IN MAIN.PY
 
-from app.services.edna_service import analyze_sequence_and_store, clean_sequence
+from fastapi.responses import JSONResponse
 from app.database import supabase
+from fastapi import APIRouter, HTTPException, Body, File, UploadFile
+from fastapi.responses import JSONResponse
+from app.services.edna_service import (
+    analyze_sequence_and_store,
+    clean_sequence,
+)
 
 router = APIRouter(prefix="/edna", tags=["eDNA"])
 
 
+# ---------------------------------------------------------
+# 1) ANALYZE RAW DNA SEQUENCE (RAW TEXT)
+# ---------------------------------------------------------
+
 @router.post("/analyze")
-async def analyze_raw_sequence(payload: Dict):
-    """
-    POST JSON: { "sequence": "ATGCGT..." }
-    Returns BLAST/taxonomy result and stores into Supabase.
-    """
-    if "sequence" not in payload:
-        raise HTTPException(status_code=400, detail="Missing 'sequence' in payload")
-    seq = payload["sequence"]
-    seq_clean = clean_sequence(seq)
-    result = analyze_sequence_and_store(seq_clean)
+async def analyze_raw_edna(
+    raw_sequence: str = Body(..., media_type="text/plain", description="Raw DNA sequence (no JSON)")
+):
+    seq_text = raw_sequence.strip()
+
+    if not seq_text:
+        raise HTTPException(status_code=400, detail="Empty sequence")
+
+    # Handle FASTA if present
+    if seq_text.startswith(">"):
+        lines = seq_text.splitlines()
+        seq_text = "".join(lines[1:]).strip()
+
+    result = analyze_sequence_and_store(seq_text)
     return JSONResponse(result)
 
+
+# ---------------------------------------------------------
+# 2) UPLOAD .FASTA FILE
+# ---------------------------------------------------------
 
 @router.post("/upload-fasta")
 async def upload_fasta(file: UploadFile = File(...)):
@@ -39,15 +53,26 @@ async def upload_fasta(file: UploadFile = File(...)):
     return JSONResponse(result)
 
 
-@router.get("/{id}")
-def get_result(id: str):
-    res = supabase.table("edna_data").select("*").eq("id", id).single().execute()
-    if not res.data:
-        raise HTTPException(status_code=404, detail="Record not found")
-    return res.data
-
+# ---------------------------------------------------------
+# 3) GET HISTORY STORED IN SUPABASE (latest to oldest)
+# ---------------------------------------------------------
 
 @router.get("/history")
-def history(limit: int = Query(50, gt=0, le=1000), offset: int = 0):
-    res = supabase.table("edna_data").select("*").range(offset, offset + limit - 1).execute()
-    return {"count": len(res.data or []), "data": res.data}
+def edna_history(limit: int = 20, offset: int = 0):
+    """List past EDNA runs with pagination."""
+    res = (
+        supabase.table("edna_data")
+        .select("*")
+        .order("id", desc=True)  # latest first
+        .limit(limit)
+        .offset(offset)
+        .execute()
+    )
+
+    if not res.data:
+        return {"count": 0, "results": []}
+
+    return {
+        "count": len(res.data),
+        "results": res.data
+    }

@@ -1,23 +1,24 @@
-from fastapi import APIRouter, Query
-from fastapi.responses import HTMLResponse
+# THIS FILE HAS TAXONOMY ENDPOINTS WHICH IS IMPORTED IN MAIN.PY
+
+from fastapi import APIRouter
 import pandas as pd
-import plotly.express as px
-
-# LOAD TAXONOMY FROM SUPABASE
 from app.services.db_reader_service import load_taxonomy_from_db
-
 router = APIRouter(prefix="/taxonomy", tags=["Taxonomy"])
 
 
-# ============================
+# ----------------------------
 # HELPER: GET DATA FROM DB
-# ============================
+# ----------------------------
+
 def load_taxonomy():
     df = load_taxonomy_from_db()
     return df
 
 
-# ============ 1) SPECIES LIST ===============
+# ---------------------------------------------------------
+# 1) SHOW THE OVERALL LIST OF TAXONOMY DATABASE
+# ---------------------------------------------------------
+
 @router.get("/list")
 def list_species():
     df = load_taxonomy()
@@ -31,7 +32,10 @@ def list_species():
     }
 
 
-# ============ 2) FULL DETAILS OF SPECIES ============
+# ---------------------------------------------------------
+# 2) FULL DETAILS OF SPECIES BY GIVING SCIENTIFIC NAME
+# ---------------------------------------------------------
+
 @router.get("/species/{name}")
 def species_info(name: str):
     df = load_taxonomy()
@@ -46,7 +50,10 @@ def species_info(name: str):
     return match.to_dict(orient="records")[0]
 
 
-# ============ 3) FILTER BY FAMILY, GENUS, ORDER ============
+# ---------------------------------------------------------
+# 3) FILTER BY FAMILY, GENUS & ORDER
+# ---------------------------------------------------------
+
 @router.get("/filter")
 def filter_taxonomy(
     family: str | None = None,
@@ -57,11 +64,9 @@ def filter_taxonomy(
     if df is None:
         return {"error": "No taxonomy data uploaded"}
 
-    # KEEP EXACT SAME NORMALIZATION (NEEDED FROM BEFORE)
     for col in ["Family", "Genus", "Order"]:
         df[col] = df[col].astype(str).fillna("").str.lower()
 
-    # SAME EXACT FILTER LOGIC
     if family:
         df = df[df["Family"] == family.lower()]
     if genus:
@@ -69,39 +74,5 @@ def filter_taxonomy(
     if order:
         df = df[df["Order"] == order.lower()]
 
-    # SAME FIX FOR JSON NaN
     clean_df = df.where(pd.notnull(df), None)
     return clean_df.to_dict(orient="records")
-
-
-# ============ 4) IUCN STATUS BAR CHART ============
-@router.get("/iucn/stats", response_class=HTMLResponse)
-def iucn_stats():
-    df = load_taxonomy()
-    if df is None:
-        return "<h3>No taxonomy data uploaded</h3>"
-
-    count = df["IUCN Status"].value_counts().reset_index()
-    count.columns = ["IUCN Status", "Count"]
-
-    fig = px.bar(count, x="IUCN Status", y="Count",
-                 title="Conservation Status of Species",
-                 color="IUCN Status",
-                 template="plotly_dark")
-    return HTMLResponse(fig.to_html(full_html=True))
-
-
-# ============ 5) HABITAT PIE CHART ============
-@router.get("/habitat/stats", response_class=HTMLResponse)
-def habitat_stats():
-    df = load_taxonomy()
-    if df is None:
-        return "<h3>No taxonomy data uploaded</h3>"
-
-    count = df["Habitat Type"].value_counts().reset_index()
-    count.columns = ["Habitat Type", "Count"]
-
-    fig = px.pie(count, names="Habitat Type", values="Count",
-                 title="Habitat Distribution",
-                 template="plotly_dark")
-    return HTMLResponse(fig.to_html(full_html=True))
