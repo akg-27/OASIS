@@ -264,3 +264,86 @@ def analyze_sequence_and_store(sequence: str) -> Dict[str, Any]:
 
     save_record(record)
     return record
+
+
+# ---------------------------------------------------------
+# NEW: DIRECT BLAST + PARSE (NO DATABASE)
+# ---------------------------------------------------------
+
+def run_blast_and_parse(sequence: str) -> Optional[Dict[str, Any]]:
+    seq = clean_sequence(sequence)
+
+    if len(seq) < 50:
+        return {
+            "raw_sequence": seq,
+            "species": None,
+            "score": None,
+            "identity": None,
+            "evalue": None,
+            "taxonomy": None,
+            "note": "sequence_too_short"
+        }
+
+    # SUBMIT
+    rid = submit_blast(seq)
+    if not rid:
+        return {
+            "raw_sequence": seq,
+            "species": None,
+            "score": None,
+            "identity": None,
+            "evalue": None,
+            "taxonomy": None,
+            "note": "blast_submit_failed"
+        }
+
+    # POLL
+    xml = poll_blast_for_rid(rid)
+    if not xml:
+        return {
+            "raw_sequence": seq,
+            "species": None,
+            "score": None,
+            "identity": None,
+            "evalue": None,
+            "taxonomy": None,
+            "note": "blast_poll_failed"
+        }
+
+    # PARSE
+    top = parse_blast_xml_for_top_hit(xml)
+    if not top:
+        return {
+            "raw_sequence": seq,
+            "species": None,
+            "score": None,
+            "identity": None,
+            "evalue": None,
+            "taxonomy": None,
+            "note": "no_hits_found"
+        }
+
+    # EXTRACT SPECIES
+    hit_def = top["hit_def"]
+    hit_words = hit_def.split()
+    species_guess = None
+
+    if len(hit_words) >= 2:
+        species_guess = f"{hit_words[0]} {hit_words[1]}"
+
+    taxonomy = fetch_taxonomy_for_name(species_guess) if species_guess else None
+
+    return {
+        "raw_sequence": seq,
+        "species": species_guess,
+        "score": float(top["score"]),
+        "identity": float(top["identity_pct"]),
+        "evalue": float(top["evalue"]),
+        "taxonomy": taxonomy,
+        "note": "ok"
+    }
+
+
+def run_blast_direct(sequence: str):
+    result = run_blast_and_parse(sequence)  # your existing BLAST logic
+    return result

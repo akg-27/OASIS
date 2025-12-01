@@ -1,17 +1,18 @@
 from datetime import datetime
 from app.database import supabase
 
-def extract_metadata(data, dtype):
+def extract_metadata(df, dtype):
     return {
-        "type": dtype,
-        "columns": list(data.columns) if data is not None else None,
-        "records": len(data) if data is not None else None,
-        "created_at": datetime.now().isoformat()
+        "dataset_type": dtype,
+        "columns": list(df.columns),
+        "records": len(df),
+        "created_at": datetime.utcnow().isoformat()
     }
 
 def save_metadata(meta: dict):
     supabase.table("dataset_metadata").insert({
-        "file_path": meta.get("file_path"),
-        "dataset_type": meta.get("type"),
-        "metadata": meta
+        "version": 1,   # REQUIRED
+        "dataset_type": meta["dataset_type"],
+        "metadata": meta,
+        "created_at": meta["created_at"]
     }).execute()

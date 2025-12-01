@@ -1,24 +1,9 @@
 # THIS FILE HAS OTOLITH ENDPOINTS WHICH IS IMPORTED IN MAIN.PY
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Query
-from fastapi.responses import JSONResponse
-from app.services.otolith_service import ingest_otolith_csv_bytes
+from fastapi import APIRouter, HTTPException, Query
 from app.database import supabase
 
 router = APIRouter(prefix="/otolith", tags=["Otolith"])
-
-
-# ---------------------------------------------------------
-# 1) FOR OTOLITH CSV FILE UPLOAD
-# ---------------------------------------------------------
-
-@router.post("/upload-csv")
-async def upload_otolith_csv(file: UploadFile = File(...)):
-    if not (file.filename.endswith(".csv") or file.filename.endswith(".xlsx")):
-        raise HTTPException(status_code=400, detail="Please upload a CSV file")
-    content = await file.read()
-    result = ingest_otolith_csv_bytes(content)
-    return JSONResponse({"status": "ok", "summary": result})
 
 
 # ---------------------------------------------------------

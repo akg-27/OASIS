@@ -1,78 +1,91 @@
-# THIS FILE HAS TAXONOMY ENDPOINTS WHICH IS IMPORTED IN MAIN.PY
+# app/routers/taxonomy_routes.py
 
-from fastapi import APIRouter
-import pandas as pd
-from app.services.db_reader_service import load_taxonomy_from_db
+from fastapi import APIRouter, Query, requests
+from app.database import supabase
+
 router = APIRouter(prefix="/taxonomy", tags=["Taxonomy"])
 
 
-# ----------------------------
-# HELPER: GET DATA FROM DB
-# ----------------------------
-
-def load_taxonomy():
-    df = load_taxonomy_from_db()
-    return df
-
-
 # ---------------------------------------------------------
-# 1) SHOW THE OVERALL LIST OF TAXONOMY DATABASE
+# 1) LIST TAXONOMY (uses Supabase directly)
 # ---------------------------------------------------------
 
 @router.get("/list")
-def list_species():
-    df = load_taxonomy()
-    if df is None:
-        return {"error": "No taxonomy data uploaded"}
+def list_species(limit: int = Query(1000, gt=1, le=10000), offset: int = 0):
+    res = (
+        supabase.table("taxonomy_data")
+        .select("*")
+        .range(offset, offset + limit - 1)
+        .execute()
+    )
 
     return {
-        "species_count": df.shape[0],
-        "species": df["Scientific Name"].dropna().unique().tolist(),
-        "common_names": df["Common Name"].dropna().unique().tolist()
+        "count": len(res.data or []),
+        "data": res.data or []
     }
 
 
 # ---------------------------------------------------------
-# 2) FULL DETAILS OF SPECIES BY GIVING SCIENTIFIC NAME
+# 2) GET SPECIES DETAILS (case-insensitive)
 # ---------------------------------------------------------
-
 @router.get("/species/{name}")
 def species_info(name: str):
-    df = load_taxonomy()
-    if df is None:
-        return {"error": "No taxonomy data uploaded"}
 
-    df["Scientific Name"] = df["Scientific Name"].astype(str)
-    match = df[df["Scientific Name"].str.lower() == name.lower()]
-    if match.empty:
-        return {"error": "Species not found"}
+    # Query in lowercase for case-insensitive matching
+    res = (
+        supabase.table("taxonomy_data")
+        .select("*")
+        .execute()
+    )
 
-    return match.to_dict(orient="records")[0]
+    if not res.data:
+        raise requests.get(status_code=404, detail="No taxonomy data uploaded")
+
+    # Manual filtering (Supabase does not support ILIKE on JSON columns)
+    name_lower = name.lower()
+
+    for row in res.data:
+        sci = row.get("scientific_name")
+        if sci and sci.lower() == name_lower:
+            return row
+
+    raise requests.get(status_code=404, detail="Species not found")
 
 
 # ---------------------------------------------------------
-# 3) FILTER BY FAMILY, GENUS & ORDER
+# 3) FILTER TAXONOMY BY FAMILY, GENUS, ORDER
 # ---------------------------------------------------------
-
 @router.get("/filter")
 def filter_taxonomy(
     family: str | None = None,
     genus: str | None = None,
     order: str | None = None
 ):
-    df = load_taxonomy()
-    if df is None:
-        return {"error": "No taxonomy data uploaded"}
+    # Load all rows (efficient for filtering)
+    res = supabase.table("taxonomy_data").select("*").execute()
+    if not res.data:
+        return []
 
-    for col in ["Family", "Genus", "Order"]:
-        df[col] = df[col].astype(str).fillna("").str.lower()
+    rows = res.data
+    filtered = []
 
-    if family:
-        df = df[df["Family"] == family.lower()]
-    if genus:
-        df = df[df["Genus"] == genus.lower()]
-    if order:
-        df = df[df["Order"] == order.lower()]
+    # Normalize request filters
+    fam = family.lower() if family else None
+    gen = genus.lower() if genus else None
+    ord_ = order.lower() if order else None
 
-    clean_df = df.where(pd.notnull(df), None)
-    return clean_df.to_dict(orient="records")
+    for row in rows:
+        rfam = (row.get("family") or "").lower()
+        rgen = (row.get("genus") or "").lower()
+        rord = (row.get("order") or "").lower()
+
+        if fam and rfam != fam:
+            continue
+        if gen and rgen != gen:
+            continue
+        if ord_ and rord != ord_:
+            continue
+
+        filtered.append(row)
+
+    return filtered

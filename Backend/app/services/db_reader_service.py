@@ -1,47 +1,48 @@
+# NOT IN USE NOW
+
 from app.database import supabase
 import pandas as pd
 import random
 
+
 # ============================
-# GENERIC FETCH-ALL HELPER
+# GENERIC FULL-TABLE FETCHER
 # ============================
 
-def fetch_all_rows(table_name):
-    limit = 1000
+def fetch_all_rows(table_name, columns="*"):
+    limit = 2000
     offset = 0
     all_rows = []
 
     while True:
-        res = supabase.table(table_name).select("data").range(offset, offset + limit - 1).execute()
+        res = (
+            supabase.table(table_name)
+            .select(columns)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+
         if not res.data:
             break
+
         all_rows.extend(res.data)
         offset += limit
 
-    return [r["data"] for r in all_rows]
+    return all_rows
 
 
-# ========================
+
+# ============================
 # OCEAN LOADER
-# ========================
+# ============================
 
-def load_ocean_from_db(sample_size=1000):
-    rows = fetch_all_rows("ocean_data")
+def load_ocean_from_db(sample_size=2000):
+    rows = fetch_all_rows("ocean_data", "*")
     if not rows:
         return None
 
-    # Sampling optimization (faster visualization)
+    # sample (avoid heavy plots)
     if len(rows) > sample_size:
         rows = random.sample(rows, sample_size)
-    return pd.DataFrame(rows)
 
-
-# ========================
-# TAXONOMY LOADER
-# ========================
-
-def load_taxonomy_from_db():
-    rows = fetch_all_rows("taxonomy_data")
-    if not rows:
-        return None
     return pd.DataFrame(rows)
