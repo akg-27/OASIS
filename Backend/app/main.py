@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from app.routers import upload_routes
-from Backend.app.routers import ocean_routes
+from app.routers import ocean_routes
 from app.routers import taxonomy_routes
 from app.routers import otolith_routes
 from app.routers import edna_routes
