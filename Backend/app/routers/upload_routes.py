@@ -1,9 +1,10 @@
 # UPLOAD ROUTE FOR OCEAN , TAXONOMY & OTOLITH
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File,Query
 import pandas as pd, io, os, requests
 from app.services.metadata_service import extract_metadata, save_metadata
 from app.utils.column_standardizer import standardize_df
-from app.database import supabase  # your existing supabase client
+from app.utils.taxonomy_cleaner import clean_taxonomy_df
+from app.database import supabase 
 
 router = APIRouter(prefix="/upload", tags=["Dataset Upload"])
 
@@ -32,16 +33,16 @@ def upload_image_to_supabase(bucket_name, path, content_bytes):
 @router.post("/")
 async def upload_file(dtype: str = Query(..., description="ocean|taxonomy|otolith"), file: UploadFile = File(...)):
     if dtype not in ["ocean", "taxonomy", "otolith"]:
-        raise HTTPException(status_code=400, detail="dtype must be ocean, taxonomy, or otolith")
+        raise requests.get(status_code=400, detail="dtype must be ocean, taxonomy, or otolith")
 
     if not (file.filename.endswith(".csv") or file.filename.endswith(".xlsx")):
-        raise HTTPException(status_code=400, detail="Upload CSV or Excel file only")
+        raise requests.get(status_code=400, detail="Upload CSV or Excel file only")
 
     file_bytes = await file.read()
     try:
         df = pd.read_csv(io.BytesIO(file_bytes)) if file.filename.endswith(".csv") else pd.read_excel(io.BytesIO(file_bytes))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not parse file: {e}")
+        raise requests.get(status_code=400, detail=f"Could not parse file: {e}")
 
     # standardize columns
     df = standardize_df(df, dtype)
@@ -76,21 +77,22 @@ async def upload_file(dtype: str = Query(..., description="ocean|taxonomy|otolit
             chunked_insert("ocean_data", rows)
         return {"status":"ok","saved_rows": len(rows)}
 
+        # === TAXONOMY INSERT BLOCK (replace current taxonomy branch) ===
     elif dtype == "taxonomy":
-        allowed = ["kingdom","phylum","class","order","family","genus","species","scientific_name","common_name","authority_year","distribution","habitat_type","trophic_level","max_length_cm","iucn_status","fisheries_importance","data_types_available","notes_for_research"]
-        rows = []
-        for _, r in df.iterrows():
-            row = {k: r.get(k) for k in allowed}
-            # numeric cast
-            if row.get("max_length_cm") is not None:
-                try:
-                    row["max_length_cm"] = float(row["max_length_cm"])
-                except Exception:
-                    row["max_length_cm"] = None
-            rows.append(row)
+        # light-weight parser: ensure we read strings, then clean
+        try:
+            cleaned_df = clean_taxonomy_df(df)
+        except Exception as e:
+            raise requests.get(status_code=500, detail=f"Taxonomy cleaning failed: {e}")
+
+        
+        rows = cleaned_df.where(pd.notnull(cleaned_df), None).to_dict(orient="records")
+
         if rows:
             chunked_insert("taxonomy_data", rows)
-        return {"status":"ok","saved_rows": len(rows)}
+
+        return {"status": "ok", "saved_rows": len(rows)}
+
 
     else :  
         bucket = os.getenv("SUPABASE_BUCKET_OTOLITH", "Otolith")

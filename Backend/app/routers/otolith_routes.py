@@ -1,6 +1,6 @@
 # THIS FILE HAS OTOLITH ENDPOINTS WHICH IS IMPORTED IN MAIN.PY
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, requests, Query
 from app.database import supabase
 
 router = APIRouter(prefix="/otolith", tags=["Otolith"])
@@ -34,7 +34,7 @@ def unlabeled(limit: int = Query(1000, gt=0, le=10000)):
 def add_label(id: str = Query(...), label: str = Query(...)):
     check = supabase.table("otolith_data").select("id").eq("id", id).execute()
     if not check.data:
-        raise HTTPException(status_code=404, detail="Otolith record not found")
+        raise requests.get(status_code=404, detail="Otolith record not found")
     supabase.table("otolith_data").update({"label": label}).eq("id", id).execute()
     return {"status": "ok", "id": id, "label": label}
 
@@ -58,6 +58,6 @@ def get_by_otolith_id(oid: str = Query(..., description="Original otolithID like
     )
 
     if not res.data:
-        raise HTTPException(status_code=404, detail="Otolith ID not found")
+        raise requests.get(status_code=404, detail="Otolith ID not found")
 
     return res.data[0]

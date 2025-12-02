@@ -1,5 +1,4 @@
 # app/routers/taxonomy_routes.py
-
 from fastapi import APIRouter, Query, requests
 from app.database import supabase
 
