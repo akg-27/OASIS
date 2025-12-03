@@ -1,10 +1,15 @@
 # UPLOAD ROUTE FOR OCEAN , TAXONOMY & OTOLITH
 from fastapi import APIRouter, UploadFile, File,Query
-import pandas as pd, io, os, requests
 from app.services.metadata_service import extract_metadata, save_metadata
 from app.utils.column_standardizer import standardize_df
 from app.utils.taxonomy_cleaner import clean_taxonomy_df
-from app.database import supabase 
+from app.database import supabase
+import pandas as pd
+import io
+import os
+import requests
+from datetime import datetime
+
 
 router = APIRouter(prefix="/upload", tags=["Dataset Upload"])
 
@@ -31,18 +36,19 @@ def upload_image_to_supabase(bucket_name, path, content_bytes):
             raise
 
 @router.post("/")
-async def upload_file(dtype: str = Query(..., description="ocean|taxonomy|otolith"), file: UploadFile = File(...)):
+async def upload_file(dtype: str = Query(..., description="ocean | taxonomy | otolith"), file: UploadFile = File(...)):
     if dtype not in ["ocean", "taxonomy", "otolith"]:
         raise requests.get(status_code=400, detail="dtype must be ocean, taxonomy, or otolith")
 
     if not (file.filename.endswith(".csv") or file.filename.endswith(".xlsx")):
-        raise requests.get(status_code=400, detail="Upload CSV or Excel file only")
+        return{"status":"Upload CSV or Excel file only"}
 
     file_bytes = await file.read()
     try:
         df = pd.read_csv(io.BytesIO(file_bytes)) if file.filename.endswith(".csv") else pd.read_excel(io.BytesIO(file_bytes))
     except Exception as e:
-        raise requests.get(status_code=400, detail=f"Could not parse file: {e}")
+        return {"status": "error", "detail": f"Could not parse file: {e}"}
+
 
     # standardize columns
     df = standardize_df(df, dtype)
@@ -58,24 +64,91 @@ async def upload_file(dtype: str = Query(..., description="ocean|taxonomy|otolit
     # ------------------------
 
 
-    # save to appropriate table (columns insert)
+    # ============================================================
+    # OCEAN DATA UPLOAD (FINAL — CLEAN & WORKING)
+    # ============================================================
+
+    from datetime import datetime
+
+    def smart_parse_date(x):
+        """Handles Excel float dates, dd-mm-yyyy, dd-Mon-yy."""
+        if x is None or pd.isna(x):
+            return None
+
+        # A) Excel numeric serial date (float/int)
+        if isinstance(x, (int, float)):
+            try:
+                return pd.Timestamp("1899-12-30") + pd.to_timedelta(int(x), "D")
+            except:
+                pass
+
+        # B) dd-mm-yyyy
+        try:
+            return datetime.strptime(str(x), "%d-%m-%Y")
+        except:
+            pass
+
+        # C) dd-Mon-yy (29-Jan-19)
+        try:
+            return datetime.strptime(str(x), "%d-%b-%y")
+        except:
+            pass
+
+        # D) Pandas autodetect
+        try:
+            return pd.to_datetime(str(x), errors="coerce")
+        except:
+            return None
+
+
     if dtype == "ocean":
-        # select subset of columns that exist in table
-        allowed = ["lon","lat","dic","mld","pco2_original","chl","no3","sss","sst","deviant_uncertainty","station_id","locality","water_body"]
+
+        allowed = [
+            "datetime", "lon", "lat", "dic", "mld",
+            "pco2_original", "chl", "no3", "sss", "sst",
+            "deviant_uncertainty", "station_id", "locality", "water_body"
+        ]
+
+        # ------------ PARSE DATETIME -----------------
+        if "datetime" in df.columns:
+            df["datetime"] = df["datetime"].apply(smart_parse_date)
+        else:
+            df["datetime"] = None
+
+        # ------------ BUILD ROWS -----------------
         rows = []
         for _, r in df.iterrows():
             row = {k: r.get(k) for k in allowed}
-            # numeric conversions
-            for numcol in ["lon","lat","dic","mld","pco2_original","chl","no3","sss","sst","deviant_uncertainty"]:
-                if row.get(numcol) is not None:
+
+            # datetime → ISO format
+            dt = row.get("datetime")
+            if isinstance(dt, (pd.Timestamp, datetime)):
+                row["datetime"] = dt.strftime("%Y-%m-%d")
+            else:
+                row["datetime"] = None
+
+            # numeric fixes
+            numeric_cols = [
+                "lon", "lat", "dic", "mld", "pco2_original",
+                "chl", "no3", "sss", "sst", "deviant_uncertainty"
+            ]
+            for col in numeric_cols:
+                if row.get(col) is not None:
                     try:
-                        row[numcol] = float(row[numcol])
-                    except Exception:
-                        row[numcol] = None
+                        row[col] = float(row[col])
+                    except:
+                        row[col] = None
+
             rows.append(row)
+
+        # ------------ INSERT INTO SUPABASE -----------------
         if rows:
             chunked_insert("ocean_data", rows)
-        return {"status":"ok","saved_rows": len(rows)}
+
+        return {"status": "ok", "saved_rows": len(rows)}
+
+
+
 
         # === TAXONOMY INSERT BLOCK (replace current taxonomy branch) ===
     elif dtype == "taxonomy":

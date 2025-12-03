@@ -2,7 +2,7 @@
 
 from fastapi.responses import JSONResponse
 from app.database import supabase
-from fastapi import APIRouter, HTTPException, Body, File, UploadFile
+from fastapi import APIRouter, requests, Body, File, UploadFile
 from fastapi.responses import JSONResponse
 from app.services.edna_service import (
     analyze_sequence_and_store,
@@ -23,7 +23,7 @@ async def analyze_raw_edna(
     seq_text = raw_sequence.strip()
 
     if not seq_text:
-        raise HTTPException(status_code=400, detail="Empty sequence")
+        raise requests.get(status_code=400, detail="Empty sequence")
 
     # Handle FASTA if present
     if seq_text.startswith(">"):

@@ -1,5 +1,7 @@
 # app/utils/column_standardizer.py
 OCEAN_MAP = {
+    "DATETIME": "datetime",         
+    "DATE": "datetime",             
     "LON": "lon",
     "LONGITUDE": "lon",
     "LONG": "lon",
@@ -20,6 +22,7 @@ OCEAN_MAP = {
     "LOCALITY": "locality",
     "WATERBODY": "water_body",
 }
+
 
 TAXONOMY_MAP = {
     "Kingdom": "kingdom",
