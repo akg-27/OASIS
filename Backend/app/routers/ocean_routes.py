@@ -1,246 +1,142 @@
+# app/routers/ocean_routes.py
 from fastapi import APIRouter, Query
-from fastapi.responses import HTMLResponse
-import numpy as np
 import pandas as pd
-import plotly.express as px
-from datetime import datetime
+import numpy as np
 from app.database import supabase
 
 router = APIRouter(prefix="/ocean", tags=["Ocean Visualization"])
 
+PARAMETERS = [
+    "dic", "mld", "pco2_original", "chl", "no3",
+    "sss", "sst", "deviant_uncertainty"
+]
 
-# ===========================================================
-# 1) DIRECT SUPABASE LOADER (NO db_reader_service required)
-# ===========================================================
+UNITS = {
+    "dic": "milimole/m3",
+    "mld": "m",
+    "pco2_original": "micro_atm",
+    "chl": "kg/m3",
+    "no3": "milimole/m3",
+    "sss": "PSU",
+    "sst": "deg C",
+    "deviant_uncertainty": "micro atm"
+}
 
-def load_ocean_data(sample_size=3000):
-    rows = []
-    limit = 2000
-    offset = 0
-
-    while True:
-        res = (
-            supabase.table("ocean_data")
-            .select("*")
-            .range(offset, offset + limit - 1)
-            .execute()
-        )
-
-        if not res.data:
-            break
-
-        rows.extend(res.data)
-        offset += limit
-
+# ---------------------------------------------------------------
+# LOAD OCEAN DF
+# ---------------------------------------------------------------
+def load_ocean_df():
+    rows = supabase.table("ocean_data").select("*").execute().data
     if not rows:
         return None
 
     df = pd.DataFrame(rows)
 
-    # Normalize None/NaN
-    df = df.where(pd.notnull(df), None)
+    for col in ["lat", "lon", "dic", "mld", "pco2_original",
+                "chl", "no3", "sss", "sst", "deviant_uncertainty"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Ensure column names are upper-case for visualization consistency
-    rename_map = {
-        "lat": "LAT",
-        "lon": "LON",
-        "dic": "DIC",
-        "mld": "MLD",
-        "pco2_original": "PCO2_ORIGINAL",
-        "chl": "CHL",
-        "no3": "NO3",
-        "sss": "SSS",
-        "sst": "SST",
-        "deviant_uncertainty": "DEVIANT_UNCERTAINTY"
-    }
-    df = df.rename(columns=rename_map)
-
-    # Normalize datetime column if available
     if "datetime" in df.columns:
         df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
-
-    # Sample for performance
-    if len(df) > sample_size:
-        df = df.sample(n=sample_size)
 
     return df
 
 
-# ===========================================================
-# VALID PARAMETERS & UNITS
-# ===========================================================
-
-PARAMETERS = [
-    "DIC", "MLD", "PCO2_ORIGINAL", "CHL",
-    "NO3", "SSS", "SST", "DEVIANT_UNCERTAINTY"
-]
-
-UNITS = {
-    "DIC": "milimole/m3",
-    "MLD": "m",
-    "PCO2_ORIGINAL": "micro_atm",
-    "CHL": "kg/m3",
-    "NO3": "milimole/m3",
-    "SSS": "PSU",
-    "SST": "deg C",
-    "DEVIANT_UNCERTAINTY": "micro atm"
-}
-
-
-# ===========================================================
-# HELPER: NEAREST ROW
-# ===========================================================
-
-def get_nearest_row(df, LAT, LON):
-    df["dist"] = np.sqrt((df["LAT"] - LAT)**2 + (df["LON"] - LON)**2)
-    nearest_idx = df["dist"].idxmin()
-    return df.loc[nearest_idx]
-
-
-# ===========================================================
-# 1) GET VALUE BY LAT/LON
-# ===========================================================
-
+# ---------------------------------------------------------------
+# 1) VALUE BY COORDINATE
+# ---------------------------------------------------------------
 @router.get("/get_value")
-def get_value(LAT: float, LON: float,
-              parameter: str = Query(..., enum=PARAMETERS)):
-
-    df = load_ocean_data()
+def get_value(
+    lat: float,
+    lon: float,
+    parameter: str = Query(..., enum=PARAMETERS)
+):
+    df = load_ocean_df()
     if df is None:
         return {"error": "No ocean data found"}
 
-    row = get_nearest_row(df, LAT, LON)
-    value = row[parameter]
-    unit = UNITS.get(parameter, "")
+    df = df.dropna(subset=["lat", "lon", parameter])
+
+    df["dist"] = np.sqrt((df["lat"] - lat)**2 + (df["lon"] - lon)**2)
+    nearest = df.iloc[df["dist"].idxmin()]
 
     return {
-        "input_lat": LAT,
-        "input_lon": LON,
-        "nearest_lat": float(row["LAT"]),
-        "nearest_lon": float(row["LON"]),
+        "input_lat": lat,
+        "input_lon": lon,
+        "nearest_lat": float(nearest["lat"]),
+        "nearest_lon": float(nearest["lon"]),
         "parameter": parameter,
-        "value": float(value),
-        "unit": unit
+        "value": float(nearest[parameter]),
+        "unit": UNITS.get(parameter, "")
     }
 
 
-# ===========================================================
-# 2) BUBBLE MAP (HTML PLOT)
-# ===========================================================
+# ---------------------------------------------------------------
+# 2) BUBBLE MAP — JSON OUTPUT
+# ---------------------------------------------------------------
+@router.get("/map_json")
+def bubble_map_json(parameter: str = Query(..., enum=PARAMETERS)):
 
-@router.get("/map", response_class=HTMLResponse)
-def bubble_map(parameter: str = Query(..., enum=PARAMETERS)):
-    df = load_ocean_data()
+    df = load_ocean_df()
     if df is None:
-        return HTMLResponse("<h3>No ocean data</h3>")
+        return {"error": "No ocean data found"}
 
-    if parameter not in df.columns:
-        return HTMLResponse(f"<h3>Parameter '{parameter}' not found</h3>")
+    df = df.dropna(subset=["lat", "lon", parameter])
 
-    df = df[["LAT", "LON", parameter]].dropna()
-
-    RANGE_LIMITS = {
-        "DIC": (1950, 2100),
-        "MLD": (0, 100),
-        "PCO2_ORIGINAL": (250, 550),
-        "CHL": (5e-8, 4e-7),
-        "NO3": (0.00, 0.06),
-        "SSS": (30, 40),
-        "SST": (20, 35),
-        "DEVIANT_UNCERTAINTY": (0, 5)
+    return {
+        "parameter": parameter,
+        "unit": UNITS.get(parameter, ""),
+        "bounds": {
+            "lat_min": float(df["lat"].min()),
+            "lat_max": float(df["lat"].max()),
+            "lon_min": float(df["lon"].min()),
+            "lon_max": float(df["lon"].max())
+        },
+        "data": [
+            {
+                "lat": float(row["lat"]),
+                "lon": float(row["lon"]),
+                "value": float(row[parameter])
+            }
+            for _, row in df.iterrows()
+        ]
     }
 
-    vmin, vmax = RANGE_LIMITS.get(
-        parameter,
-        (df[parameter].min(), df[parameter].max())
-    )
 
-    fig = px.scatter_geo(
-        df,
-        lat="LAT", lon="LON",
-        color=parameter,
-        range_color=(vmin, vmax),
-        hover_data={"LAT": True, "LON": True, parameter: True},
-        color_continuous_scale="Viridis",
-        projection="natural earth",
-        title=f"{parameter} Bubble Map"
-    )
-
-    return HTMLResponse(fig.to_html(full_html=True))
-
-
-# ===========================================================
-# 3) SINGLE-PARAMETER LINE PLOT (DATE RANGE)
-# ===========================================================
-
-@router.get("/line", response_class=HTMLResponse)
-def line_plot(
+# ---------------------------------------------------------------
+# 3) LINE CHART — JSON OUTPUT
+# ---------------------------------------------------------------
+@router.get("/line_json")
+def line_chart_json(
     parameter: str = Query(..., enum=PARAMETERS),
     start_date: str = None,
     end_date: str = None
 ):
-    df = load_ocean_data()
+    df = load_ocean_df()
     if df is None:
-        return HTMLResponse("<h3>No ocean data</h3>")
+        return {"error": "No ocean data found"}
 
     if "datetime" not in df.columns:
-        return HTMLResponse("<h3>No datetime column found in DB</h3>")
+        return {"error": "No datetime column found"}
 
-    df = df.dropna(subset=["datetime"])
+    df = df.dropna(subset=["datetime", parameter])
 
     if start_date:
         df = df[df["datetime"] >= pd.to_datetime(start_date)]
-
     if end_date:
         df = df[df["datetime"] <= pd.to_datetime(end_date)]
 
-    if df.empty:
-        return HTMLResponse("<h3>No records found for the given date range</h3>")
+    df = df.sort_values("datetime")
 
-    fig = px.line(
-        df,
-        x="datetime",
-        y=parameter,
-        title=f"{parameter} over time",
-        markers=True
-    )
-    return HTMLResponse(fig.to_html(full_html=True))
-
-
-# ===========================================================
-# 4) MULTIPLE PARAMETERS LINE PLOT
-# ===========================================================
-
-@router.get("/multi", response_class=HTMLResponse)
-def multi_line_plot(
-    params: str = Query(..., description="Comma separated, e.g. DIC,MLD,SST")
-):
-    df = load_ocean_data()
-    if df is None:
-        return HTMLResponse("<h3>No ocean data</h3>")
-
-    if "datetime" not in df.columns:
-        return HTMLResponse("<h3>No datetime column found in DB</h3>")
-
-    selected = [p.strip() for p in params.split(",")]
-
-    for p in selected:
-        if p not in PARAMETERS:
-            return HTMLResponse(f"<h3>Invalid parameter: {p}</h3>")
-
-    df = df.dropna(subset=["datetime"])
-
-    # Melt to long-form so Plotly can plot multiple lines
-    melted = df.melt(id_vars="datetime", value_vars=selected,
-                     var_name="Parameter", value_name="Value")
-
-    fig = px.line(
-        melted,
-        x="datetime",
-        y="Value",
-        color="Parameter",
-        title="Multi-Parameter Time Plot",
-        markers=True
-    )
-
-    return HTMLResponse(fig.to_html(full_html=True))
+    return {
+        "parameter": parameter,
+        "unit": UNITS.get(parameter, ""),
+        "data": [
+            {
+                "date": row["datetime"].strftime("%Y-%m-%d"),
+                "value": float(row[parameter])
+            }
+            for _, row in df.iterrows()
+        ]
+    }
