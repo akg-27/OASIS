@@ -1,0 +1,13 @@
+85e8630881bd35ff04c3551365b7ad73983085edfa4a78cf7c288791cb73fbd0
+
+https://drive.google.com/drive/u/3/folders/1ZgSn77sZytloPM9h3E86-oe6_AZJdEwm
+
+{
+  "username": "aniket",
+  "email": "aniketganorkar2004@gmail.com",
+  "password": "aniket123",
+  "contact_no": "74772960XX",
+  "full_name": "Aniket Ganorkar",
+  "role": "SC",
+  "drive_link": "https://drive.google.com/drive/u/3/folders/1ZgSn77sZytloPM9h3E86-oe6_AZJdEwm"
+}

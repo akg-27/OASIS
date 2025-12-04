@@ -7,19 +7,18 @@ from app.routers import otolith_routes
 from app.routers import edna_routes
 from app.routers import integration_routes
 from app.routers import metadata_routes
+from app.routers import auth_routes
 
 
 app = FastAPI(title="CMLRE Marine Data Platform")
 
-# Allow all origins (for development)
-origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,            # React access allowed
+    allow_origins=["*"],            
     allow_credentials=True,
-    allow_methods=["*"],              # GET, POST, PUT, DELETE, OPTIONS
-    allow_headers=["*"],              # All headers allowed
+    allow_methods=["*"],              
+    allow_headers=["*"],              
 )
 
 
@@ -31,6 +30,7 @@ app.include_router(otolith_routes.router)
 app.include_router(edna_routes.router)
 app.include_router(integration_routes.router)
 app.include_router(metadata_routes.router)
+app.include_router(auth_routes.router)
 
 
 @app.get("/")
