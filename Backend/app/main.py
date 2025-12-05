@@ -9,21 +9,23 @@ from app.routers import integration_routes
 from app.routers import metadata_routes
 from app.routers import auth_routes
 from app.routers import visualization_routes
+import os
+import uvicorn
 
 
 app = FastAPI(title="CMLRE Marine Data Platform")
 
-
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],              
-    allow_headers=["*"],              
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
-# Add Routers
+# Routers
 app.include_router(upload_routes.router)
 app.include_router(ocean_routes.router)
 app.include_router(taxonomy_routes.router)
@@ -37,4 +39,15 @@ app.include_router(visualization_routes.router)
 
 @app.get("/")
 def root():
-    return {"msg": "Backend running..."}
+    return {"msg": "Backend running successfully"}
+
+
+# ---------- REQUIRED FOR RENDER ----------
+# Bind Uvicorn to 0.0.0.0 and use $PORT env
+if __name__ == "__main__":
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8000)),
+        reload=False
+    )
