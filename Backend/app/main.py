@@ -8,6 +8,7 @@ from app.routers import edna_routes
 from app.routers import integration_routes
 from app.routers import metadata_routes
 from app.routers import auth_routes
+from app.routers import visualization_routes
 
 
 app = FastAPI(title="CMLRE Marine Data Platform")
@@ -31,6 +32,7 @@ app.include_router(edna_routes.router)
 app.include_router(integration_routes.router)
 app.include_router(metadata_routes.router)
 app.include_router(auth_routes.router)
+app.include_router(visualization_routes.router)
 
 
 @app.get("/")
