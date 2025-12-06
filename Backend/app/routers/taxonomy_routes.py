@@ -1,6 +1,8 @@
 # app/routers/taxonomy_routes.py
 from fastapi import APIRouter, Query, requests
 from app.database import supabase
+import plotly.express as px
+from fastapi.responses import HTMLResponse
 
 router = APIRouter(prefix="/taxonomy", tags=["Taxonomy"])
 
@@ -88,3 +90,71 @@ def filter_taxonomy(
         filtered.append(row)
 
     return filtered
+
+
+@router.get("/map", response_class=HTMLResponse)
+def taxonomy_species_map(family: str = Query(..., description="Exact family name")):
+    
+    # ------------------------------------
+    # 1. Fetch points by FAMILY
+    # ------------------------------------
+    res = (
+        supabase.table("taxonomy_data")
+        .select(
+            "lat, lon, family, genus, kingdom, phylum, scientific_name, species", "locality"
+        )
+        .eq("family", family)
+        .execute()
+    )
+
+    if not res.data:
+        return HTMLResponse(f"<h3>No records found for family: {family}</h3>", status_code=404)
+
+    # ------------------------------------
+    # 2. Filter valid lat/lon entries
+    # ------------------------------------
+    data = [row for row in res.data if row.get("lat") and row.get("lon")]
+
+    if not data:
+        return HTMLResponse(f"<h3>No valid lat/lon entries for family: {family}</h3>", status_code=404)
+
+    # ------------------------------------
+    # 3. Bubble Map
+    # ------------------------------------
+    import pandas as pd
+    df = pd.DataFrame(data)
+
+    fig = px.scatter_geo(
+        df,
+        lat="lat",
+        lon="lon",
+        hover_data=[
+            "lat", "lon",
+            "family", "genus", "kingdom", "phylum",
+            "scientific_name", "species", "locality"
+        ],
+        color="scientific_name",
+        size_max=10,
+        title=f"Distribution Map (Family): {family}"
+    )
+
+    # ------------------------------------
+    # 4. Indian Region Focus
+    # ------------------------------------
+    fig.update_geos(
+        showcountries=True,
+        showcoastlines=True,
+        landcolor="lightgray",
+        oceancolor="lightblue",
+        projection=dict(type="natural earth"),
+        lataxis_range=[5, 35],
+        lonaxis_range=[60, 100],
+    )
+
+    fig.update_layout(
+        height=650,
+        template="plotly_dark",
+        margin={"r":10, "t":40, "l":10, "b":10}
+    )
+
+    return HTMLResponse(fig.to_html(full_html=True))

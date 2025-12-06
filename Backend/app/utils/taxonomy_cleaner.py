@@ -7,7 +7,7 @@ CANONICAL_COLS = [
     "family", "genus", "kingdom", "phylum",
     "scientific_name", "species",
     "subclass", "subfamily", "suborder", "subphylum",
-    "superclass", "superfamily", "superorder"
+    "superclass", "superfamily", "superorder", "locality"
 ]
 
 # Map common raw names to canonical names
@@ -40,6 +40,9 @@ TAXONOMY_MAP = {
     "superclass": "superclass",
     "superfamily": "superfamily",
     "superorder": "superorder",
+
+    #Location
+    "locality" : "locality",
 }
 
 # Utility: normalize one dataframe
