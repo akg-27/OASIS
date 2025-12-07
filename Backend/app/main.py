@@ -9,6 +9,7 @@ from app.routers import integration_routes
 from app.routers import metadata_routes
 from app.routers import auth_routes
 from app.routers import visualization_routes
+from app.routers import data_info_routes
 import os
 import uvicorn
 
@@ -35,6 +36,7 @@ app.include_router(integration_routes.router)
 app.include_router(metadata_routes.router)
 app.include_router(auth_routes.router)
 app.include_router(visualization_routes.router)
+app.include_router(data_info_routes.router)
 
 
 @app.get("/")
