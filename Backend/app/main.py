@@ -10,6 +10,7 @@ from app.routers import metadata_routes
 from app.routers import auth_routes
 from app.routers import visualization_routes
 from app.routers import data_info_routes
+from app.routers import otolith_inference
 import os
 import uvicorn
 
@@ -37,6 +38,7 @@ app.include_router(metadata_routes.router)
 app.include_router(auth_routes.router)
 app.include_router(visualization_routes.router)
 app.include_router(data_info_routes.router)
+app.include_router(otolith_inference.router)
 
 
 @app.get("/")
@@ -47,9 +49,13 @@ def root():
 # ---------- REQUIRED FOR RENDER ----------
 # Bind Uvicorn to 0.0.0.0 and use $PORT env
 if __name__ == "__main__":
+
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=int(os.environ.get("PORT", 8000)),
         reload=False
     )
+
+
+    
