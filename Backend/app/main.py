@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import upload_routes
-from Backend.app.routers import ocean_single_routes
+from app.routers import ocean_single_routes
 from app.routers import taxonomy_routes
 from app.routers import otolith_routes
 from app.routers import edna_routes
@@ -11,8 +11,8 @@ from app.routers import auth_routes
 from app.routers import visualization_routes
 from app.routers import data_info_routes
 from app.routers import otolith_inference
-from Backend.app.routers import ocean_heat_routes
-from Backend.app.routers import ocean_multi_routes
+from app.routers import ocean_heat_routes
+from app.routers import ocean_multi_routes
 import os
 import uvicorn
 
