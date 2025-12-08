@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import upload_routes
-from app.routers import ocean_routes
+from Backend.app.routers import ocean_single_routes
 from app.routers import taxonomy_routes
 from app.routers import otolith_routes
 from app.routers import edna_routes
@@ -11,8 +11,8 @@ from app.routers import auth_routes
 from app.routers import visualization_routes
 from app.routers import data_info_routes
 from app.routers import otolith_inference
-from app.routers import ocean_test_routes
-from app.routers import ocean_overlay_routes
+from Backend.app.routers import ocean_heat_routes
+from Backend.app.routers import ocean_multi_routes
 import os
 import uvicorn
 
@@ -31,7 +31,7 @@ app.add_middleware(
 
 # Routers
 app.include_router(upload_routes.router)
-app.include_router(ocean_routes.router)
+app.include_router(ocean_single_routes.router)
 app.include_router(taxonomy_routes.router)
 app.include_router(otolith_routes.router)
 app.include_router(edna_routes.router)
@@ -41,8 +41,8 @@ app.include_router(auth_routes.router)
 app.include_router(visualization_routes.router)
 app.include_router(data_info_routes.router)
 app.include_router(otolith_inference.router)
-app.include_router(ocean_test_routes.router)
-app.include_router(ocean_overlay_routes.router)
+app.include_router(ocean_heat_routes.router)
+app.include_router(ocean_multi_routes.router)
 
 
 @app.get("/")

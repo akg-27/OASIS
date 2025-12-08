@@ -8,7 +8,7 @@ import os
 from app.database import supabase
 from app.schemas.user_schema import UserCreate, LoginRequest, UserPublic, TokenResponse
 
-router = APIRouter(prefix="/auth", tags=["Auth"])
+router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # ------------------------
 # Password hashing
