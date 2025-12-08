@@ -13,6 +13,8 @@ from app.routers import data_info_routes
 from app.routers import otolith_inference
 from app.routers import ocean_heat_routes
 from app.routers import ocean_multi_routes
+from app.routers import biodiversity_routes
+from app.routers import biodiversity_two_routes
 import os
 import uvicorn
 
@@ -43,6 +45,8 @@ app.include_router(data_info_routes.router)
 app.include_router(otolith_inference.router)
 app.include_router(ocean_heat_routes.router)
 app.include_router(ocean_multi_routes.router)
+app.include_router(biodiversity_routes.router)
+app.include_router(biodiversity_two_routes.router)
 
 
 @app.get("/")
