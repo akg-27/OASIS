@@ -1,7 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, Query
 from fastapi.responses import HTMLResponse
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import os
 

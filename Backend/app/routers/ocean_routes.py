@@ -1,6 +1,8 @@
 # app/routers/ocean_routes.py
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 import io
@@ -9,20 +11,12 @@ from app.database import supabase
 router = APIRouter(prefix="/ocean", tags=["Ocean Visualization"])
 
 
-# ============================
-# VALID FIELDS
-# ============================
 Y_PARAMETERS = [
     "dic", "mld", "pco2_original", "chl",
     "no3", "sss", "sst", "deviant_uncertainty"
 ]
 
 X_OPTIONS = ["lat", "lon", "datetime"]
-
-
-# ============================
-# UNITS (as per your dataset)
-# ============================
 
 UNITS = {
     "dic": "milimole/m3",
@@ -34,11 +28,6 @@ UNITS = {
     "sst": "deg C",
     "deviant_uncertainty": "micro atm"
 }
-
-
-# ============================
-# RANGE LIMITS (scientific)
-# ============================
 
 RANGE_LIMITS = {
     "dic": (1950, 2100),
@@ -52,32 +41,19 @@ RANGE_LIMITS = {
 }
 
 
-# ============================
-# DB LOADER
-# ============================
-
 def load_ocean_data():
     res = supabase.table("ocean_data").select("*").execute()
     if not res.data:
         return None
-
     df = pd.DataFrame(res.data)
-
-    # convert datetime
     if "datetime" in df.columns:
         df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
-
     return df
 
 
-
-# ============================
-# MAIN PLOT ENDPOINT
-# ============================
-
 @router.get("/plot")
 def generate_plot(
-    plot_type: str = Query(..., enum=["line", "scatter", "bubble"]),
+    plot_type: str = Query(..., enum=["line", "scatter"]),
     x: str = Query(..., enum=X_OPTIONS),
     y: str = Query(..., enum=Y_PARAMETERS),
     start_date: str | None = None,
@@ -87,35 +63,39 @@ def generate_plot(
     if df is None:
         return {"error": "No ocean data available"}
 
-    # ----- Filter by date range -----
     if x == "datetime":
         if start_date:
             df = df[df["datetime"] >= pd.to_datetime(start_date)]
         if end_date:
             df = df[df["datetime"] <= pd.to_datetime(end_date)]
 
-    # Keep only required columns
     df = df[[x, y]].dropna()
 
-    if df.empty:
-        return {"error": "No data available for selected parameters"}
+    # ===============================
+    # LIMIT: use only first 1000 rows
+    # (no filtering, negatives allowed)
+    # ===============================
+    df = df.head(1000)
 
-    # ----- Prepare ranges -----
+    if df.empty:
+        return {"error": "No data available for this selection"}
+
     ymin, ymax = RANGE_LIMITS.get(y, (df[y].min(), df[y].max()))
     unit = UNITS.get(y, "")
 
-    # ==========================================================
-    # BEAUTIFIED OUTPUT — PREMIUM LOOK FOR JUDGES (ONLY ADDED)
-    # ==========================================================
+    # ===========================
+    # Stats including negatives
+    # ===========================
+    min_val = df[y].min()
+    max_val = df[y].max()
+    mean_val = df[y].mean()
 
     plt.figure(figsize=(12, 6), dpi=180)
     plt.style.use("seaborn-v0_8")
-
     ax = plt.gca()
-    ax.set_facecolor("#f7f9fc")   # soft background
+    ax.set_facecolor("#f7f9fc")
     plt.grid(color="#d9d9d9", linestyle="--", linewidth=0.7, alpha=0.7)
 
-    # ======= ORIGINAL PLOT LOGIC (NOT CHANGED) =======
     if plot_type == "line":
         plt.plot(
             df[x], df[y],
@@ -134,23 +114,8 @@ def generate_plot(
             label=f"{y.upper()} ({unit})"
         )
 
-    # Bubble plot (future use)
-    elif plot_type == "bubble":
-        plt.scatter(
-            df[x], df[y],
-            s=60,
-            alpha=0.70,
-            color="#009688",
-            edgecolor="#00332f",
-            label=f"{y.upper()} ({unit})"
-        )
-
-    # =====================================================
-    # PREMIUM LEGEND, LABELS, TITLES, WATERMARK
-    # =====================================================
-
     plt.title(
-        f"{plot_type.upper()} plot of {y.upper()} vs {x.upper()}",
+        f"{plot_type.upper()} Plot of {y.upper()} vs {x.upper()}",
         fontsize=18,
         fontweight="bold",
         pad=20,
@@ -159,7 +124,6 @@ def generate_plot(
 
     plt.xlabel(x.upper(), fontsize=14, fontweight="bold")
     plt.ylabel(f"{y.upper()} ({unit})", fontsize=14, fontweight="bold")
-
     plt.ylim(ymin, ymax)
 
     plt.legend(
@@ -170,6 +134,20 @@ def generate_plot(
         edgecolor="#cccccc"
     )
 
+    # ===========================
+    # Stats box (negatives included)
+    # ===========================
+    plt.text(
+        0.01, 0.98,
+        f"Min: {min_val:.4f}\nMax: {max_val:.4f}\nAvg: {mean_val:.4f}",
+        transform=plt.gca().transAxes,
+        ha="left",
+        va="top",
+        fontsize=11,
+        color="#000",
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="#ffffff", edgecolor="#bbbbbb")
+    )
+
     plt.text(
         0.99, 0.01,
         "Generated by CMFRI Ocean Analytics",
@@ -178,12 +156,11 @@ def generate_plot(
         ha="right",
         va="bottom",
         alpha=0.8,
-        transform=plt.gca().transAxes,
+        transform=plt.gca().transAxes
     )
 
     plt.tight_layout()
 
-    # ----- Return PNG -----
     buf = io.BytesIO()
     plt.savefig(buf, format="png", dpi=180)
     plt.close()

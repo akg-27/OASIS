@@ -11,6 +11,8 @@ from app.routers import auth_routes
 from app.routers import visualization_routes
 from app.routers import data_info_routes
 from app.routers import otolith_inference
+from app.routers import ocean_test_routes
+from app.routers import ocean_overlay_routes
 import os
 import uvicorn
 
@@ -39,6 +41,8 @@ app.include_router(auth_routes.router)
 app.include_router(visualization_routes.router)
 app.include_router(data_info_routes.router)
 app.include_router(otolith_inference.router)
+app.include_router(ocean_test_routes.router)
+app.include_router(ocean_overlay_routes.router)
 
 
 @app.get("/")

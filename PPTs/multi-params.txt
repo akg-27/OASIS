@@ -1,0 +1,123 @@
+# app/routers/ocean_overlay_routes.py
+
+from fastapi import APIRouter, Query
+from fastapi.responses import Response
+import pandas as pd
+import io
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import seaborn as sns
+from app.database import supabase
+
+router = APIRouter(prefix="/ocean-overlay", tags=["LAS Overlay"])
+
+Y_PARAMETERS = [
+    "dic", "mld", "pco2_original", "chl",
+    "no3", "sss", "sst", "deviant_uncertainty"
+]
+
+X_OPTIONS = ["lat", "lon", "datetime"]
+
+RANGE_LIMITS = {
+    "dic": (1950, 2100),
+    "mld": (0, 100),
+    "pco2_original": (250, 550),
+    "chl": (5e-8, 4e-7),
+    "no3": (0.00, 0.06),
+    "sss": (30, 40),
+    "sst": (20, 35),
+    "deviant_uncertainty": (0, 5)
+}
+
+
+def load_overlay_data():
+    res = supabase.table("ocean_data").select("*").execute()
+    if not res.data:
+        return None
+    df = pd.DataFrame(res.data)
+    if "datetime" in df.columns:
+        df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
+    return df
+
+
+@router.get("/multi")
+def las_overlay(
+    x: str = Query(..., enum=X_OPTIONS),
+    y: list[str] = Query(...),
+    start_date: str | None = None,
+    end_date: str | None = None
+):
+    df = load_overlay_data()
+    if df is None:
+        return {"error": "No ocean data available"}
+
+    invalid = [p for p in y if p not in Y_PARAMETERS]
+    if invalid:
+        return {"error": f"Invalid parameters: {invalid}"}
+
+    # =========================
+    # Date filter (only if datetime chosen)
+    # =========================
+    if x == "datetime":
+        if start_date:
+            df = df[df["datetime"] >= pd.to_datetime(start_date)]
+        if end_date:
+            df = df[df["datetime"] <= pd.to_datetime(end_date)]
+
+    df = df[[x] + y].dropna()
+    if df.empty:
+        return {"error": "No valid data for selected range"}
+
+    # ===============================
+    # LAS STYLE OVERLAY (unchanged)
+    # ===============================
+    plt.figure(figsize=(12, 6))
+    ax = plt.gca()
+
+    colors = sns.color_palette("tab10", len(y))
+    ax.set_xlabel(x.upper())
+
+    # base parameter
+    base = y[0]
+    ax.plot(df[x], df[base], color=colors[0], linewidth=2, label=base.upper())
+    ax.set_ylabel(base.upper(), color=colors[0])
+    ax.set_ylim(RANGE_LIMITS[base])
+
+    axes = [ax]
+
+    # remaining stacked twinx axes
+    for i, param in enumerate(y[1:], start=1):
+        twin = ax.twinx()
+        axes.append(twin)
+
+        twin.spines["right"].set_position(("axes", 1 + 0.15 * i))
+        twin.plot(df[x], df[param], color=colors[i], linewidth=2, label=param.upper())
+        twin.set_ylabel(param.upper(), color=colors[i])
+        twin.set_ylim(RANGE_LIMITS[param])
+
+    ax.grid(True, linestyle="--", alpha=0.4)
+    plt.title("LAS Style Multi-Parameter Overlay")
+
+    # ==============================
+    # Full legend bottom-centered
+    # ==============================
+    handles = []
+    for ax_i in axes:
+        h, _ = ax_i.get_legend_handles_labels()
+        handles.extend(h)
+
+    plt.legend(
+        handles,
+        [p.upper() for p in y],
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.35),
+        ncol=len(y),
+        frameon=True,
+    )
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", dpi=250, bbox_inches="tight")
+    plt.close()
+    buf.seek(0)
+    return Response(content=buf.getvalue(), media_type="image/png")
