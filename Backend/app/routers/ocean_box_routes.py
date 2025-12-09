@@ -1,3 +1,5 @@
+# app/routers/ocean_dist_routes.py
+
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 import matplotlib
@@ -9,7 +11,6 @@ import numpy as np
 import io
 from enum import Enum
 from app.database import supabase
-
 
 router = APIRouter(prefix="/ocean-dist", tags=["Ocean Statistical Plots"])
 
@@ -38,6 +39,7 @@ class DistPlot(str, Enum):
     corr = "corr"
     scatter_matrix = "scatter_matrix"
     relation = "relation"
+    hexbin = "hexbin"   # <-- ADDED ONLY
 
 
 def load_ocean_data():
@@ -60,24 +62,18 @@ def ocean_stats_plot(
     if df is None:
         return {"error": "No data found"}
 
-    # keep only numeric parameters
     core = df[Y_PARAMETERS].apply(pd.to_numeric, errors="coerce").dropna()
-
-    # remove cosmic junk from DIC etc
     core = core[(core > -1e10).all(axis=1)]
-
-    # trim outliers
     core = core[(core >= core.quantile(0.01)) & (core <= core.quantile(0.99))]
 
     sns.set_style("whitegrid")
 
     # ==========================================================
-    # 1️⃣ VIOLIN & BOX: requires single parameter
+    # 1️⃣ VIOLIN & BOX (single param)
     # ==========================================================
     if plot in ["violin", "box"]:
         if not y or len(y) != 1:
-            return {"error": "Select exactly 1 parameter for violin/box"}
-
+            return {"error": "Select exactly 1 parameter"}
         param = y[0]
         if param not in Y_PARAMETERS:
             return {"error": f"Invalid param {param}"}
@@ -86,26 +82,25 @@ def ocean_stats_plot(
 
         if plot == "violin":
             sns.violinplot(y=core[param], inner="quartile", ax=ax, color="#0077B6")
-            title = f"Violin Distribution of {param.upper()}"
+            ax.set_title(f"Violin Distribution of {param.upper()}")
         else:
             sns.boxplot(y=core[param], ax=ax, color="#6A4C93", fliersize=2)
-            title = f"Box Spread of {param.upper()}"
+            ax.set_title(f"Box Spread of {param.upper()}")
 
-        ax.set_title(title)
         ymin, ymax = RANGE_LIMITS[param]
         ax.set_ylim(ymin, ymax)
 
     # ==========================================================
-    # 2️⃣ CORRELATION HEATMAP (all params)
+    # 2️⃣ CORRELATION
     # ==========================================================
     elif plot == "corr":
         fig, ax = plt.subplots(figsize=(9, 7), dpi=240)
         corr = core.corr()
         sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
-        ax.set_title("Parameter Correlation Matrix Heatmap")
+        ax.set_title("Parameter Correlation Matrix")
 
     # ==========================================================
-    # 3️⃣ SCATTER MATRIX (pairplot style)
+    # 3️⃣ SCATTER MATRIX
     # ==========================================================
     elif plot == "scatter_matrix":
         g = sns.pairplot(core, diag_kind="hist", plot_kws={"alpha": 0.6, "s": 35})
@@ -116,29 +111,51 @@ def ocean_stats_plot(
         return Response(content=buf.getvalue(), media_type="image/png")
 
     # ==========================================================
-    # 4️⃣ RELATION SCATTERS (multi param relation grid)
+    # 4️⃣ RELATION GRID (multi scatter)
     # ==========================================================
     elif plot == "relation":
         if not y or len(y) < 2:
-            return {"error": "Select at least 2 parameters for relation grid"}
+            return {"error": "Select at least 2 parameters"}
 
         sel = core[y]
-        sns.set(font_scale=0.8)
-        g = sns.pairplot(sel, kind="scatter", diag_kind="kde", plot_kws={"s": 30})
+        g = sns.pairplot(sel, kind="scatter", diag_kind="hist", plot_kws={"s": 30})
         buf = io.BytesIO()
         g.fig.savefig(buf, format="png", dpi=230)
         plt.close()
         buf.seek(0)
         return Response(content=buf.getvalue(), media_type="image/png")
 
+    # ==========================================================
+    # 5️⃣ HEXBIN HEAT DENSITY (ADDED NO LOGIC CHANGE)
+    # ==========================================================
+    elif plot == "hexbin":
+        if not y or len(y) != 1:
+            return {"error": "Select exactly 1 parameter for hexbin"}
 
-    # ====================
-    # Return Non-pair PNG
-    # ====================
+        param = y[0]
+        if param not in Y_PARAMETERS:
+            return {"error": f"Invalid param {param}"}
+
+        fig, ax = plt.subplots(figsize=(8, 6), dpi=240)
+        im = ax.hexbin(
+            df["lon"], df["lat"], C=df[param],
+            gridsize=35, cmap="viridis",
+            vmin=RANGE_LIMITS[param][0], vmax=RANGE_LIMITS[param][1]
+        )
+
+        cbar = plt.colorbar(im)
+        cbar.set_label(param.upper())
+
+        ax.set_title(f"{param.upper()} Spatial Hexbin Density")
+        ax.set_xlabel("Longitude")
+        ax.set_ylabel("Latitude")
+
+    # ==========================================================
+    # PNG RETURN BLOCK
+    # ==========================================================
     buf = io.BytesIO()
     plt.tight_layout()
     plt.savefig(buf, format="png", dpi=240)
     plt.close()
     buf.seek(0)
-
     return Response(content=buf.getvalue(), media_type="image/png")

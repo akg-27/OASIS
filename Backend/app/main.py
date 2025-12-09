@@ -50,6 +50,7 @@ app.include_router(biodiversity_routes.router)
 app.include_router(biodiversity_two_routes.router)
 app.include_router(ocean_box_routes.router)
 
+
 @app.get("/")
 def root():
     return {"msg": "Backend running successfully"}
