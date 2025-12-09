@@ -15,6 +15,7 @@ from app.routers import ocean_heat_routes
 from app.routers import ocean_multi_routes
 from app.routers import biodiversity_routes
 from app.routers import biodiversity_two_routes
+from app.routers import ocean_box_routes
 import os
 import uvicorn
 
@@ -47,7 +48,7 @@ app.include_router(ocean_heat_routes.router)
 app.include_router(ocean_multi_routes.router)
 app.include_router(biodiversity_routes.router)
 app.include_router(biodiversity_two_routes.router)
-
+app.include_router(ocean_box_routes.router)
 
 @app.get("/")
 def root():
